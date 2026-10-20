@@ -1,0 +1,109 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: Arial, Helvetica, sans-serif;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Preserve BlendIQ's shared warm neutrals in shadcn's semantic tokens. */
+:root {
+  --background: #f8f7f4;
+  --foreground: #292622;
+  --card: #fffefc;
+  --card-foreground: #292622;
+  --popover: #fffefc;
+  --popover-foreground: #292622;
+  --primary: #765447;
+  --primary-foreground: #fffcf8;
+  --secondary: #f0eae4;
+  --secondary-foreground: #594238;
+  --muted: #f0eeea;
+  --muted-foreground: #746f68;
+  --accent: #f0eae4;
+  --accent-foreground: #594238;
+  --border: #e5e0d9;
+  --input: #ded7cf;
+  --ring: #9b7867;
+  --destructive: #b52d2d;
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: #191715;
+  --foreground: #f6f0e9;
+  --card: #211e1b;
+  --card-foreground: #f6f0e9;
+  --popover: #211e1b;
+  --popover-foreground: #f6f0e9;
+  --primary: #e1bcac;
+  --primary-foreground: #302018;
+  --secondary: #352b25;
+  --secondary-foreground: #e1bcac;
+  --muted: #2c2824;
+  --muted-foreground: #b8ada2;
+  --accent: #352b25;
+  --accent-foreground: #e1bcac;
+  --border: #3c3530;
+  --input: #4c423a;
+  --ring: #c9a18e;
+  --destructive: #ff9c9c;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+button,
+a,
+input,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
