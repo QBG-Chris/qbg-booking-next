@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "BlendIQ Booking",
-  description: "Find your stylist, choose your service, and make time for a fresh look.",
+  description: "Find your stylist, choose your service, and make time for a fresh look!",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
