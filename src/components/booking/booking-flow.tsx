@@ -18,6 +18,7 @@ import {
   type Profile,
   type Receipt,
   type Service,
+  type SocialLink,
 } from "@/lib/models";
 import { saveReceipt } from "@/lib/receipt";
 import { cn } from "@/lib/utils";
@@ -53,10 +54,12 @@ export function BookingFlow({
   profile,
   services,
   schedule,
+  socialLinks,
 }: {
   profile: Profile;
   services: Service[];
   schedule: Availability[];
+  socialLinks: SocialLink[];
 }) {
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -219,6 +222,7 @@ export function BookingFlow({
 
   return (
     <Shell
+      profile={profile}
       title={profile.display_name}
       onBack={
         pendingPhotos ? undefined : () => (step ? goTo(step - 1) : router.push(`/${profile.slug}`))
@@ -360,7 +364,13 @@ export function BookingFlow({
           aria-label="Appointment overview"
           className={cn("lg:sticky lg:top-8", step === 3 && "hidden lg:block")}
         >
-          <AppointmentOverview profile={profile} service={service} date={date} time={time} />
+          <AppointmentOverview
+            profile={profile}
+            service={service}
+            date={date}
+            time={time}
+            socialLinks={socialLinks}
+          />
         </aside>
       </div>
       {step < 3 && (

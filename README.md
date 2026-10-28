@@ -41,7 +41,7 @@ Enter **jane-doe**, or open [/jane-doe](http://localhost:3000/jane-doe). The dem
 | `POST /api/bookings`                                   | Validates details and consent, resolves the stylist's active service, rechecks availability, and inserts an appointment. |
 | `POST /api/bookings/:id/images`                        | Attaches one validated photo using the appointment-scoped upload token issued with a new booking.                        |
 
-The interface uses official shadcn/ui components (Base UI), Tailwind CSS 4, and the existing warm BlendIQ color palette. It follows the system theme, provides a theme toggle, and adapts the appointment overview and sticky action bar for smaller screens. Keyboard-accessible native radio inputs select services and times.
+The interface uses official shadcn/ui components (Base UI) and Tailwind CSS 4. Each stylist's `BookingProfiles.theme` (`light` or `dark`) controls the profile, booking flow, and confirmation page. Light mode uses a soft gray background with lighter cards; dark mode uses a near-black background with slightly lighter cards. `BookingProfiles.accent_color` accepts a three- or six-digit hex color (including `#`) and colors buttons, icons, selections, and focus rings. Button labels automatically use black or white for contrast. Missing or invalid themes fall back to dark mode; missing or invalid accents use a default BlendIQ accent suited to the selected theme. Profile settings are rendered on the server and take precedence over browser preferences or previously saved themes. The appointment overview and sticky action bar adapt for smaller screens. Keyboard-accessible native radio inputs select services and times.
 
 Details remain intact when moving between steps. Required fields are first name, last name, email, and a 10-digit US phone number. Phone numbers format as you type, with an optional `+1` country code; submissions still use national digits. Notes are optional; explicit SMS consent is required before sending. Failed availability checks block progression and offer retry. Failed submissions retain the request for retry. Confirmation data is stored in this tab's `sessionStorage` so refresh works; opening a confirmation in another browser/tab offers a path to start booking.
 
@@ -75,7 +75,11 @@ Demo mode exercises the same selection, validation, authorization, retry, and co
 
 ## Data compatibility
 
-The repository uses the existing `BookingProfiles`, `BookingServices`, `Availability`, and `Appointments` tables. IDs returned as numbers are normalized to strings. Availability uses the existing Monday=0 through Sunday=6 convention. Cancelled appointments do not block slots.
+The repository uses the existing `BookingProfiles`, `BookingServices`, `Availability`, `Appointments`, `ScheduleBlocks`, `SocialLinks`, and `SocialPlatforms` tables. IDs returned as numbers are normalized to strings. Availability uses the existing Monday=0 through Sunday=6 convention. Cancelled appointments do not block slots.
+
+Social profiles appear on the stylist page and in the booking overview. Links are scoped by `SocialLinks.stylist_slug`, with platform names joined from `SocialPlatforms` through `platform_id`. The destination is the stylist's configured `SocialLinks.link`, not the platform's generic URL. Store complete HTTP(S) profile URLs; incomplete entries and other URL schemes are omitted. Links open in a new tab to preserve the booking. Empty or inaccessible social profiles do not prevent booking. Both tables must allow the app's anonymous connection to read the intended public records. Demo mode includes sample Instagram and Facebook links.
+
+Schedule blocks are scoped by `ScheduleBlocks.user_id = BookingProfiles.user_id`. A non-null `date` makes a block apply only on that date. Otherwise, `is_daily` applies every day, and `is_weekly` applies to the comma-separated `days_of_week` values (Monday=0 through Sunday=6). Matching blocks are returned as busy time ranges without exposing user IDs or recurrence records. Both the date picker and the server's pre-insert check exclude any appointment that overlaps a block, including services that start before a block and run into it. A service can end exactly when a block starts or begin exactly when it ends. A failed block lookup prevents booking until availability can be checked again. Demo mode includes a daily noon–1 PM block.
 
 The insert keeps the original column contract: `stylist_slug`, `services`, `client_name`, `client_email`, `client_phone`, `appointment_date`, `appointment_start_time`, `appointment_end_time`, `notes`, `status`, `price`, and `is_online_booking`. Requests use `requested` status, national phone digits, local `YYYY-MM-DD` dates, and 24-hour times. Service price, duration, and name are resolved on the server.
 
@@ -94,7 +98,7 @@ The server rechecks availability before insertion. Preventing simultaneous reque
 - `src/lib/booking.ts`: Validation, date/time handling, availability, and insert mapping.
 - `src/lib/server/repository.ts`: Server-only Supabase access and isolated demo adapter.
 - `tests/unit/`: Domain and API regression checks using mocked repositories.
-- `tests/e2e/`: Chrome checks using demo data, including mobile/desktop and both themes.
+- `tests/e2e/`: Chrome checks using demo data, including mobile/desktop and profile appearance overriding either browser theme preference.
 
 Add UI components with the standard [shadcn CLI](https://ui.shadcn.com/docs/installation/next):
 

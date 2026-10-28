@@ -19,6 +19,13 @@ export const profileSchema = z.object({
   location_city: z.string().nullish(),
   location_state: z.string().nullish(),
   location_zip: z.string().nullish(),
+  theme: z.enum(["light", "dark"]).catch("dark"),
+  accent_color: z
+    .string()
+    .trim()
+    .regex(/^#(?:[\da-f]{3}|[\da-f]{6})$/i)
+    .nullish()
+    .catch(null),
 });
 export const serviceSchema = z.object({
   id: z.coerce.string(),
@@ -42,11 +49,25 @@ export const busyPeriodSchema = z.object({
   appointment_start_time: z.string(),
   appointment_end_time: z.string(),
 });
+export const scheduleBlockSchema = z.object({
+  date: z.iso.date().nullable(),
+  start_time: z.string(),
+  end_time: z.string(),
+  is_daily: z.boolean().nullable(),
+  is_weekly: z.boolean().nullable(),
+  days_of_week: z.string().nullable(),
+});
 
 export type Profile = z.infer<typeof profileSchema>;
+export type SocialLink = {
+  id: string;
+  platform: string;
+  url: string;
+};
 export type Service = z.infer<typeof serviceSchema>;
 export type Availability = z.infer<typeof availabilitySchema>;
 export type BusyPeriod = z.infer<typeof busyPeriodSchema>;
+export type ScheduleBlock = z.infer<typeof scheduleBlockSchema>;
 export type ClientDetails = {
   firstName: string;
   lastName: string;

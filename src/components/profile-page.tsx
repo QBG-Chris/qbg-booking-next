@@ -2,16 +2,23 @@ import Link from "next/link";
 import { ArrowRight, Mail, MapPin, Phone } from "lucide-react";
 import { Shell } from "./shell";
 import { StylistAvatar } from "./stylist-identity";
+import { StylistSocialLinks } from "./stylist-social-links";
 import { Badge } from "./ui/badge";
 import { buttonVariants } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Separator } from "./ui/separator";
 import { address } from "@/lib/booking";
-import type { Profile } from "@/lib/models";
+import type { Profile, SocialLink } from "@/lib/models";
 
-export function ProfilePage({ profile }: { profile: Profile }) {
+export function ProfilePage({
+  profile,
+  socialLinks,
+}: {
+  profile: Profile;
+  socialLinks: SocialLink[];
+}) {
   return (
-    <Shell title={profile.display_name} backHref="/">
+    <Shell profile={profile} title={profile.display_name} backHref="/">
       <div className="grid gap-12 py-3 md:grid-cols-[1fr_380px] md:gap-20">
         <section>
           <Badge variant="secondary" className="mb-9">
@@ -22,6 +29,7 @@ export function ProfilePage({ profile }: { profile: Profile }) {
             {profile.display_name}
           </h1>
           <p className="mt-3 text-muted-foreground">A fresh look starts here.</p>
+          <StylistSocialLinks links={socialLinks} className="mt-7" />
           {profile.bio && (
             <div className="mt-9 border-t pt-7">
               <h2 className="font-semibold">About your stylist</h2>

@@ -13,23 +13,24 @@ import { StylistIdentity } from "@/components/stylist-identity";
 import { Detail } from "./appointment-overview";
 import { displayDate, displayTime, duration, money } from "@/lib/booking";
 import { loadReceipt } from "@/lib/receipt";
-import type { Receipt } from "@/lib/models";
+import type { Profile, Receipt } from "@/lib/models";
 import { requestImageLabels } from "@/lib/request-images";
 
-export function Confirmation({ slug }: { slug: string }) {
+export function Confirmation({ profile }: { profile: Profile }) {
+  const { slug } = profile;
   const [receipt, setReceipt] = useState<Receipt | null | undefined>(undefined);
   useEffect(() => {
     startTransition(() => setReceipt(loadReceipt(slug)));
   }, [slug]);
   if (receipt === undefined)
     return (
-      <Shell>
+      <Shell profile={profile}>
         <Skeleton className="mx-auto h-96 max-w-xl" />
       </Shell>
     );
   if (!receipt)
     return (
-      <Shell className="max-w-2xl text-center">
+      <Shell profile={profile} className="max-w-2xl text-center">
         <h1 className="mt-8 text-3xl font-semibold tracking-tight">No booking request to show</h1>
         <p className="my-6 text-sm leading-7 text-muted-foreground">
           Your request details are available in the browser tab where you made your booking. Start a
@@ -42,7 +43,7 @@ export function Confirmation({ slug }: { slug: string }) {
     );
   const { stylist, service, booking, id } = receipt;
   return (
-    <Shell title={stylist.display_name} className="max-w-2xl">
+    <Shell profile={profile} title={stylist.display_name} className="max-w-2xl">
       <div className="mx-auto mb-6 flex size-20 items-center justify-center rounded-full bg-secondary text-primary">
         <Check className="size-9" />
       </div>

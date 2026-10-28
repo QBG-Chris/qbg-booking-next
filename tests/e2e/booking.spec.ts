@@ -42,6 +42,16 @@ const photo = {
   ),
 };
 
+test("stylist schedule blocks remove every overlapping service time", async ({ page }) => {
+  await chooseService(page);
+  await chooseDate(page);
+  await expect(page.getByRole("radio", { name: "11:00 AM", exact: true })).toBeVisible();
+  for (const name of ["11:30 AM", "12:00 PM", "12:30 PM"]) {
+    await expect(page.getByRole("radio", { name, exact: true })).toHaveCount(0);
+  }
+  await expect(page.getByRole("radio", { name: "1:00 PM", exact: true })).toBeVisible();
+});
+
 test("phone formatting supports typing, pasting, editing, and clearing", async ({ page }) => {
   await reachDetails(page);
   await expect(page.getByRole("heading", { name: "A few details about you" })).toBeFocused();
@@ -378,14 +388,19 @@ test("stale responses cannot replace the newly selected date", async ({ page }) 
 
 for (const width of [320, 390, 768, 1440]) {
   for (const colorScheme of ["light", "dark"] as const) {
-    test(`all screens fit ${width}px in ${colorScheme} mode`, async ({ page }) => {
+    test(`all screens fit ${width}px with a ${colorScheme} browser preference`, async ({
+      page,
+    }) => {
       await page.setViewportSize({ width, height: 1000 });
       await page.emulateMedia({ colorScheme });
       async function checkLayout(name: string) {
         expect(
           await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
         ).toBe(true);
-        if (colorScheme === "dark") await expect(page.locator("html")).toHaveClass(/dark/);
+        await expect(page.locator("[data-theme]:visible")).toHaveAttribute(
+          "data-theme",
+          name === "landing" ? "dark" : "light",
+        );
         await page.screenshot({ path: test.info().outputPath(`${name}.png`), fullPage: true });
       }
       await page.goto("/");
@@ -422,13 +437,29 @@ test("direct confirmation visits have a recovery path", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Book an appointment" })).toBeVisible();
 });
 
-test("theme override persists across navigation and reload", async ({ page }) => {
-  await page.emulateMedia({ colorScheme: "light" });
-  await page.goto("/");
-  await expect(page.locator("html")).toHaveClass(/light/);
-  await page.getByRole("button", { name: "Toggle color theme" }).click();
-  await expect(page.locator("html")).toHaveClass(/dark/);
+test("profile appearance overrides saved and browser themes across navigation and reload", async ({
+  page,
+}) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.addInitScript(() => localStorage.setItem("theme", "dark"));
   await page.goto("/jane-doe");
+  const shell = page.locator("[data-theme]:visible");
+  await expect(shell).toHaveAttribute("data-theme", "light");
+  await expect(shell).toHaveCSS("background-color", "rgb(242, 242, 242)");
+  const book = page.getByRole("link", { name: "Book an appointment" });
+  await expect(book).toHaveCSS("background-color", "rgb(118, 84, 71)");
+  await expect(book).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(page.getByRole("button", { name: "Toggle color theme" })).toHaveCount(0);
+  await book.click();
+  await expect(page.getByRole("heading", { name: "Choose your service" })).toBeVisible();
+  await expect(shell).toHaveAttribute("data-theme", "light");
+  await expect(shell).toHaveCSS("background-color", "rgb(242, 242, 242)");
   await page.reload();
-  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect(shell).toHaveAttribute("data-theme", "light");
+  await page.goto("/book/jane-doe/confirmation");
+  await expect(shell).toHaveAttribute("data-theme", "light");
+  await expect(page.getByRole("link", { name: "Book an appointment" })).toHaveCSS(
+    "background-color",
+    "rgb(118, 84, 71)",
+  );
 });

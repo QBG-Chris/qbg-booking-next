@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { ArrowLeft, Scissors } from "lucide-react";
-import { ThemeToggle } from "./theme-provider";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
+import type { Profile } from "@/lib/models";
+import { profileAppearance } from "@/lib/theme";
 
 export function Shell({
   children,
@@ -11,15 +12,22 @@ export function Shell({
   backHref,
   onBack,
   className,
+  profile,
 }: {
   children: React.ReactNode;
   title?: string;
   backHref?: string;
   onBack?: () => void;
   className?: string;
+  profile?: Profile;
 }) {
+  const { theme, style } = profileAppearance(profile);
   return (
-    <div className="min-h-dvh">
+    <div
+      data-theme={theme}
+      className={cn(theme, "min-h-dvh bg-background text-foreground")}
+      style={style}
+    >
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:z-50 focus:bg-card focus:p-3"
@@ -54,7 +62,6 @@ export function Shell({
             <Badge variant="outline" className="hidden sm:inline-flex">
               Online booking
             </Badge>
-            <ThemeToggle />
           </div>
         </div>
       </header>

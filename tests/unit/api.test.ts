@@ -112,6 +112,14 @@ describe("booking endpoint", () => {
     expect((await POST(request({ ...input, date: "2020-01-01" }))).status).toBe(409);
     expect(repository.createBooking).not.toHaveBeenCalled();
   });
+  it("rejects a request whose service runs into a newly added schedule block", async () => {
+    vi.mocked(repository.getBusyPeriods).mockResolvedValue([
+      { appointment_start_time: "11:00:00", appointment_end_time: "12:00:00" },
+    ]);
+    expect((await POST(request(input))).status).toBe(409);
+    expect(repository.getBusyPeriods).toHaveBeenCalledWith(input.slug, input.date);
+    expect(repository.createBooking).not.toHaveBeenCalled();
+  });
   it("fails closed when availability cannot be checked", async () => {
     vi.mocked(repository.getBusyPeriods).mockRejectedValue(new Error("Internal database message"));
     const response = await POST(request(input));
@@ -127,6 +135,15 @@ describe("booking endpoint", () => {
 });
 
 describe("availability endpoint", () => {
+  it("fails closed when a schedule block lookup fails", async () => {
+    vi.mocked(repository.getBusyPeriods).mockRejectedValue(new Error("private block lookup error"));
+    const response = await GET(
+      new NextRequest("http://localhost/api/stylists/jane-doe/availability?date=2026-10-20"),
+      { params: Promise.resolve({ slug: "jane-doe" }) },
+    );
+    expect(response.status).toBe(503);
+    expect(JSON.stringify(await response.json())).not.toContain("private block lookup error");
+  });
   it("validates calendar dates and exposes only busy time ranges", async () => {
     vi.mocked(repository.getBusyPeriods).mockResolvedValue([
       { appointment_start_time: "09:00:00", appointment_end_time: "10:00:00" },

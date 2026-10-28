@@ -34,47 +34,51 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-/* Preserve BlendIQ's shared warm neutrals in shadcn's semantic tokens. */
-:root {
-  --background: #f8f7f4;
-  --foreground: #292622;
-  --card: #fffefc;
-  --card-foreground: #292622;
-  --popover: #fffefc;
-  --popover-foreground: #292622;
+/* Each page owns its palette so profile settings are present in the server-rendered HTML. */
+:root,
+.light {
+  color-scheme: light;
+  --background: #f2f2f2;
+  --foreground: #202020;
+  --card: #fafafa;
+  --card-foreground: #202020;
+  --popover: #fafafa;
+  --popover-foreground: #202020;
   --primary: #765447;
-  --primary-foreground: #fffcf8;
-  --secondary: #f0eae4;
-  --secondary-foreground: #594238;
-  --muted: #f0eeea;
-  --muted-foreground: #746f68;
-  --accent: #f0eae4;
-  --accent-foreground: #594238;
-  --border: #e5e0d9;
-  --input: #ded7cf;
-  --ring: #9b7867;
+  --primary-foreground: #ffffff;
+  --secondary: color-mix(in srgb, var(--primary) 10%, var(--card));
+  --secondary-foreground: var(--foreground);
+  --muted: #e8e8e8;
+  --muted-foreground: #686868;
+  --accent: var(--secondary);
+  --accent-foreground: var(--foreground);
+  --border: #dcdcdc;
+  --input: #cecece;
+  --ring: var(--primary);
   --destructive: #b52d2d;
   --radius: 0.75rem;
 }
 
+:root:has([data-theme="dark"]),
 .dark {
-  --background: #191715;
-  --foreground: #f6f0e9;
-  --card: #211e1b;
-  --card-foreground: #f6f0e9;
-  --popover: #211e1b;
-  --popover-foreground: #f6f0e9;
+  color-scheme: dark;
+  --background: #111111;
+  --foreground: #f1f1f1;
+  --card: #1c1c1c;
+  --card-foreground: #f1f1f1;
+  --popover: #1c1c1c;
+  --popover-foreground: #f1f1f1;
   --primary: #e1bcac;
-  --primary-foreground: #302018;
-  --secondary: #352b25;
-  --secondary-foreground: #e1bcac;
-  --muted: #2c2824;
-  --muted-foreground: #b8ada2;
-  --accent: #352b25;
-  --accent-foreground: #e1bcac;
-  --border: #3c3530;
-  --input: #4c423a;
-  --ring: #c9a18e;
+  --primary-foreground: #000000;
+  --secondary: color-mix(in srgb, var(--primary) 14%, var(--card));
+  --secondary-foreground: var(--foreground);
+  --muted: #262626;
+  --muted-foreground: #a6a6a6;
+  --accent: var(--secondary);
+  --accent-foreground: var(--foreground);
+  --border: #353535;
+  --input: #454545;
+  --ring: var(--primary);
   --destructive: #ff9c9c;
 }
 

@@ -2,8 +2,9 @@ import { CalendarDays, Clock, MapPin, Scissors } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { StylistIdentity } from "@/components/stylist-identity";
+import { StylistSocialLinks } from "@/components/stylist-social-links";
 import { address, displayDate, displayTime, duration, money } from "@/lib/booking";
-import type { Profile, Service } from "@/lib/models";
+import type { Profile, Service, SocialLink } from "@/lib/models";
 
 export function Detail({
   icon: Icon,
@@ -34,11 +35,13 @@ export function AppointmentOverview({
   service,
   date,
   time,
+  socialLinks,
 }: {
   profile: Profile;
   service?: Service;
   date: string;
   time: string;
+  socialLinks: SocialLink[];
 }) {
   return (
     <Card className="rounded-xl py-0">
@@ -47,6 +50,7 @@ export function AppointmentOverview({
           Your appointment
         </p>
         <StylistIdentity profile={profile} />
+        <StylistSocialLinks links={socialLinks} className="mt-5" />
         <Separator className="my-6" />
         <div className="space-y-5">
           <Detail

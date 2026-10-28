@@ -6,6 +6,7 @@ import {
   type BookingPayload,
   type BusyPeriod,
   type ClientDetails,
+  type ScheduleBlock,
   type Service,
 } from "./models";
 
@@ -138,7 +139,25 @@ export function wallClock(timeZone: string, now = new Date()): { date: string; t
   };
 }
 
-/** Calendar dates stay local; reservations block their entire duration. */
+/** Dated blocks are one-time; undated recurrence uses Monday=0 through Sunday=6. */
+export function scheduleBlockPeriods(date: string, blocks: ScheduleBlock[]): BusyPeriod[] {
+  if (!isCalendarDate(date)) return [];
+  const weekday = String((parseLocalDate(date).getDay() + 6) % 7);
+  return blocks
+    .filter((block) => {
+      if (block.date !== null) return block.date === date;
+      if (block.is_daily) return true;
+      return (
+        block.is_weekly && block.days_of_week?.split(",").some((day) => day.trim() === weekday)
+      );
+    })
+    .map((block) => ({
+      appointment_start_time: block.start_time,
+      appointment_end_time: block.end_time,
+    }));
+}
+
+/** Calendar dates stay local; appointments and schedule blocks reserve their entire duration. */
 export function availableSlots(
   date: string,
   service: Service,

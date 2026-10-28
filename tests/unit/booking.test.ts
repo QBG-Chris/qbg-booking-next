@@ -8,10 +8,11 @@ import {
   localDate,
   normalizePhone,
   parseLocalDate,
+  scheduleBlockPeriods,
   wallClock,
 } from "@/lib/booking";
 import { demoAvailability, demoServices } from "@/lib/demo";
-import { serviceSchema } from "@/lib/models";
+import { serviceSchema, type ScheduleBlock } from "@/lib/models";
 
 const now = { date: "2026-10-19", time: "08:00" };
 const input = {
@@ -27,6 +28,65 @@ const input = {
   smsConsent: true,
   timeZone: "America/Chicago",
 };
+const block: ScheduleBlock = {
+  date: null,
+  start_time: "12:00:00",
+  end_time: "13:00:00",
+  is_daily: false,
+  is_weekly: false,
+  days_of_week: null,
+};
+
+describe("schedule blocks", () => {
+  it.each([19, 20, 21, 22, 23, 24, 25])("applies daily blocks on October %i", (day) => {
+    expect(scheduleBlockPeriods(`2026-10-${day}`, [{ ...block, is_daily: true }])).toEqual([
+      { appointment_start_time: "12:00:00", appointment_end_time: "13:00:00" },
+    ]);
+  });
+  it("uses Monday=0 and Sunday=6, trims weekly day values, and skips unselected days", () => {
+    const weekly = [{ ...block, is_weekly: true, days_of_week: "0, 2,6" }];
+    for (const day of [19, 21, 25]) {
+      expect(scheduleBlockPeriods(`2026-10-${day}`, weekly)).toHaveLength(1);
+    }
+    for (const day of [20, 22, 23, 24]) {
+      expect(scheduleBlockPeriods(`2026-10-${day}`, weekly)).toEqual([]);
+    }
+    expect(scheduleBlockPeriods("2026-10-26", weekly)).toHaveLength(1);
+  });
+  it.each([
+    { is_daily: false, is_weekly: false },
+    { is_daily: true, is_weekly: true },
+  ])("limits dated blocks to their date even with recurrence flags: %j", (flags) => {
+    const dated = [{ ...block, ...flags, date: input.date, days_of_week: "0,1,2,3,4,5,6" }];
+    expect(scheduleBlockPeriods(input.date, dated)).toHaveLength(1);
+    expect(scheduleBlockPeriods("2026-10-19", dated)).toEqual([]);
+    expect(scheduleBlockPeriods("2026-10-27", dated)).toEqual([]);
+  });
+  it("ignores undated blocks without recurrence and weekly blocks without selected days", () => {
+    expect(
+      scheduleBlockPeriods("2026-10-19", [
+        block,
+        { ...block, is_daily: null, is_weekly: null },
+        { ...block, is_weekly: true },
+        { ...block, is_weekly: true, days_of_week: " , , " },
+      ]),
+    ).toEqual([]);
+  });
+  it("removes every service overlapping a block while allowing exact boundaries", () => {
+    const busy = scheduleBlockPeriods(input.date, [{ ...block, date: input.date }]);
+    const slots = availableSlots(input.date, demoServices[0], demoAvailability, busy, now);
+    expect(slots).toContain("11:00");
+    expect(slots).not.toContain("11:30");
+    expect(slots).not.toContain("12:00");
+    expect(slots).not.toContain("12:30");
+    expect(slots).toContain("13:00");
+    const longer = availableSlots(input.date, demoServices[1], demoAvailability, busy, now);
+    expect(longer).toContain("10:00");
+    expect(longer).not.toContain("10:30");
+    expect(longer).not.toContain("11:00");
+    expect(longer).toContain("13:00");
+  });
+});
 
 describe("availability", () => {
   it("blocks overlapping appointments, including HH:mm:ss database values", () => {
