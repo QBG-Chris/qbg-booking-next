@@ -170,6 +170,12 @@ export function availableSlots(
 ): string[] {
   if (!isCalendarDate(date) || date < now.date) return [];
   const weekday = (parseLocalDate(date).getDay() + 6) % 7;
+  const reserved = busy.map((item) => {
+    const start = minutes(item.appointment_start_time);
+    const end = minutes(item.appointment_end_time);
+    // A period ending at or before its start (such as 18:00–00:00) runs through midnight.
+    return { start, end: end <= start ? 24 * 60 : end };
+  });
   const slots = new Set<string>();
   for (const window of schedule.filter((item) => item.day_of_week === weekday)) {
     const close = minutes(window.end_at);
@@ -180,11 +186,7 @@ export function availableSlots(
     ) {
       if (date === now.date && start <= minutes(now.time)) continue;
       if (
-        busy.some(
-          (item) =>
-            start < minutes(item.appointment_end_time) &&
-            start + service.duration_minutes > minutes(item.appointment_start_time),
-        )
+        reserved.some((item) => start < item.end && start + service.duration_minutes > item.start)
       )
         continue;
       slots.add(timeFromMinutes(start));

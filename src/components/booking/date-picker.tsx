@@ -59,7 +59,9 @@ export function DatePicker({
         <p className="mt-2 text-xs leading-6 text-muted-foreground">
           {date ? displayDate(date) : "Choose a date to see your stylist’s availability."}
         </p>
-        <p className="mt-1 text-xs text-muted-foreground">Times are shown in your local time.</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Times are shown in your stylist’s local time.
+        </p>
         <div className="mt-4" aria-live="polite">
           {loading ? (
             <div
