@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { bookingPayload } from "@/lib/booking";
+import { availableSlots, bookingPayload } from "@/lib/booking";
 import { demoServices } from "@/lib/demo";
 import type { ScheduleBlock } from "@/lib/models";
 
@@ -33,6 +33,8 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "false");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://example.supabase.co");
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-anonymous-key");
+  vi.stubEnv("SUPABASE_SECRET_KEY", "test-server-secret");
+  vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "");
   createClient.mockReturnValue({ from });
   from.mockReturnValue({ insert });
   insert.mockReturnValue({ select });
@@ -104,10 +106,16 @@ describe("busy periods repository", () => {
     ownerError = false,
   } = {}) {
     const requests: URL[] = [];
-    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(input instanceof Request ? input.url : String(input));
       requests.push(url);
       const table = url.pathname.split("/").at(-1);
+      // RLS can silently hide private blocks from a successful anonymous read.
+      if (
+        table === "ScheduleBlocks" &&
+        new Headers(init?.headers).get("apikey") !== "test-server-secret"
+      )
+        return Response.json([]);
       if ((table === "ScheduleBlocks" && blockError) || (table === "BookingProfiles" && ownerError))
         return Response.json(
           { code: "42501", message: "private database details" },
@@ -168,6 +176,43 @@ describe("busy periods repository", () => {
     await mockReads();
     const { getBusyPeriods } = await import("@/lib/server/repository");
     expect(await getBusyPeriods("jane-doe", date)).toEqual([appointment]);
+  });
+
+  it("excludes an 11 AM–noon block on the 29th even when anonymous RLS hides it", async () => {
+    const blockedDate = "2026-10-29";
+    await mockReads({
+      blocks: [
+        { ...daily, date: blockedDate, is_daily: false, start_time: "11:00", end_time: "12:00" },
+      ],
+    });
+    const { getBusyPeriods } = await import("@/lib/server/repository");
+    const busy = await getBusyPeriods("jane-doe", blockedDate);
+    const schedule = [
+      {
+        exception_id: 1,
+        stylist_slug: "jane-doe",
+        day_of_week: 3,
+        start_at: "08:00",
+        end_at: "17:00",
+      },
+    ];
+    const slots = availableSlots(blockedDate, demoServices[0], schedule, busy, {
+      date: "2026-10-28",
+      time: "08:00",
+    });
+    expect(slots).toContain("10:00");
+    expect(slots).not.toContain("10:30");
+    expect(slots).not.toContain("11:00");
+    expect(slots).not.toContain("11:30");
+    expect(slots).toContain("12:00");
+  });
+
+  it("fails closed without a server key instead of treating hidden blocks as an empty schedule", async () => {
+    vi.stubEnv("SUPABASE_SECRET_KEY", "");
+    const requests = await mockReads();
+    const { getBusyPeriods } = await import("@/lib/server/repository");
+    await expect(getBusyPeriods("jane-doe", date)).rejects.toThrow();
+    expect(requests.some((url) => url.pathname.endsWith("/ScheduleBlocks"))).toBe(false);
   });
 
   it("fails closed when blocks cannot be read", async () => {

@@ -72,6 +72,15 @@ describe("schedule blocks", () => {
       ]),
     ).toEqual([]);
   });
+  it("treats a block ending at midnight as lasting through the end of the day", () => {
+    const busy = scheduleBlockPeriods(input.date, [
+      { ...block, date: input.date, start_time: "15:00:00", end_time: "00:00:00" },
+    ]);
+    const slots = availableSlots(input.date, demoServices[2], demoAvailability, busy, now);
+    expect(slots).toContain("14:30");
+    expect(slots).not.toContain("15:00");
+    expect(slots).not.toContain("16:30");
+  });
   it("removes every service overlapping a block while allowing exact boundaries", () => {
     const busy = scheduleBlockPeriods(input.date, [{ ...block, date: input.date }]);
     const slots = availableSlots(input.date, demoServices[0], demoAvailability, busy, now);

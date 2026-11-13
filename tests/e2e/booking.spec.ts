@@ -140,7 +140,7 @@ test("selfies offer files and camera capture, and release the camera on capture 
   await page.getByRole("button", { name: "Review booking" }).click();
   await expect.poll(camerasStopped).toBe(true);
   await expect(page.getByAltText("Selfie preview")).toBeVisible();
-  await page.getByRole("checkbox", { name: "Keep me updated about my appointment" }).check();
+  await page.getByRole("checkbox", { name: "Consent to SMS communications" }).check();
   await page.getByRole("button", { name: "Confirm booking" }).click();
   await expect(page.getByText("Booking requested", { exact: true })).toBeVisible();
   await expect(page.getByText("Selfie", { exact: true })).toBeVisible();
@@ -228,7 +228,7 @@ test("optional photos validate, preview, replace, remove, and survive step chang
     else await route.continue();
   });
   await page.getByRole("button", { name: "Review booking" }).click();
-  await page.getByRole("checkbox", { name: "Keep me updated about my appointment" }).check();
+  await page.getByRole("checkbox", { name: "Consent to SMS communications" }).check();
   await page.getByRole("button", { name: "Confirm booking" }).click();
   await expect(
     page.getByText("Your booking is requested. Let’s finish your photos."),
@@ -253,7 +253,7 @@ test("one optional selfie can be attached on its own", async ({ page }) => {
     .getByLabel("Upload selfie", { exact: true })
     .setInputFiles({ ...photo, name: "selfie.png" });
   await page.getByRole("button", { name: "Review booking" }).click();
-  await page.getByRole("checkbox", { name: "Keep me updated about my appointment" }).check();
+  await page.getByRole("checkbox", { name: "Consent to SMS communications" }).check();
   await page.getByRole("button", { name: "Confirm booking" }).click();
   await expect(page.getByText("Booking requested", { exact: true })).toBeVisible();
   await expect(page.getByText("Selfie", { exact: true })).toBeVisible();
@@ -270,7 +270,7 @@ test("failed optional photos can be skipped after the appointment is requested",
     route.fulfill({ status: 503, json: { error: "Please retry." } }),
   );
   await page.getByRole("button", { name: "Review booking" }).click();
-  await page.getByRole("checkbox", { name: "Keep me updated about my appointment" }).check();
+  await page.getByRole("checkbox", { name: "Consent to SMS communications" }).check();
   await page.getByRole("button", { name: "Confirm booking" }).click();
   await page.getByRole("button", { name: "Continue without remaining photos" }).click();
   await expect(page.getByText("Booking requested", { exact: true })).toBeVisible();
@@ -315,7 +315,7 @@ test("full request retains details, requires consent, retries, and survives conf
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await expect(page.getByLabel("First name")).toHaveValue("Alex");
   await page.getByRole("button", { name: "Review booking" }).click();
-  await page.getByRole("checkbox", { name: "Keep me updated about my appointment" }).check();
+  await page.getByRole("checkbox", { name: "Consent to SMS communications" }).check();
   await page.route(
     "**/api/bookings",
     (route) => route.fulfill({ status: 503, json: { error: "Please try again." } }),
@@ -423,7 +423,7 @@ for (const width of [320, 390, 768, 1440]) {
       await page.getByRole("button", { name: "Review booking" }).click();
       await expect(page.getByRole("heading", { name: "Review your appointment" })).toBeVisible();
       await checkLayout("review");
-      await page.getByRole("checkbox", { name: "Keep me updated about my appointment" }).check();
+      await page.getByRole("checkbox", { name: "Consent to SMS communications" }).check();
       await page.getByRole("button", { name: "Confirm booking" }).click();
       await expect(page.getByText("Booking requested", { exact: true })).toBeVisible();
       await checkLayout("confirmation");
