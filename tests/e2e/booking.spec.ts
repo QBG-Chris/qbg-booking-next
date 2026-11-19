@@ -316,9 +316,13 @@ test("full request retains details, requires consent, retries, and survives conf
   await expect(page.getByLabel("First name")).toHaveValue("Alex");
   await page.getByRole("button", { name: "Review booking" }).click();
   await page.getByRole("checkbox", { name: "Consent to SMS communications" }).check();
+  const failedKeys: string[] = [];
   await page.route(
     "**/api/bookings",
-    (route) => route.fulfill({ status: 503, json: { error: "Please try again." } }),
+    (route) => {
+      failedKeys.push(route.request().postDataJSON().requestKey);
+      return route.fulfill({ status: 503, json: { error: "Please try again." } });
+    },
     { times: 1 },
   );
   await page.getByRole("button", { name: "Confirm booking" }).click();
@@ -327,14 +331,19 @@ test("full request retains details, requires consent, retries, and survives conf
     (response) => response.url().endsWith("/api/bookings") && response.status() === 201,
   );
   await page.getByRole("button", { name: "Confirm booking" }).click();
-  const receipt = await (await response).json();
+  const sent = await response;
+  // A retry repeats the same request key, so the database can't save it twice.
+  expect(failedKeys).toEqual([sent.request().postDataJSON().requestKey]);
+  expect(failedKeys[0]).toMatch(/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
+  const receipt = await sent.json();
+  expect(receipt.id).toBe(`demo-${failedKeys[0]}`);
   expect(receipt.booking).toMatchObject({
     stylist_slug: "jane-doe",
     appointment_start_time: "10:00",
     appointment_end_time: "11:00",
     price: 85,
     status: "requested",
-    client_phone: "5551234567",
+    client_phone: "+15551234567",
     is_online_booking: true,
   });
   await expect(page.getByText("Booking requested", { exact: true })).toBeVisible();
@@ -342,6 +351,45 @@ test("full request retains details, requires consent, retries, and survives conf
   await expect(page.getByText("Booking requested", { exact: true })).toBeVisible();
   await expect(page.getByText("alex@example.com", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
+});
+
+test("request keys repeat only for retries of an unchanged request", async ({ page }) => {
+  const keys: string[] = [];
+  const replies = [
+    {
+      status: 409,
+      json: { error: "That time is no longer available. Please choose another time." },
+    },
+    { status: 503, json: { error: "Please try again." } },
+    { status: 503, json: { error: "Please try again." } },
+    { status: 503, json: { error: "Please try again." } },
+  ];
+  await page.route("**/api/bookings", (route) => {
+    keys.push(route.request().postDataJSON().requestKey);
+    return route.fulfill(replies[keys.length - 1]);
+  });
+  await reachDetails(page);
+  await fillDetails(page);
+  await page.getByRole("button", { name: "Review booking" }).click();
+  const consent = page.getByRole("checkbox", { name: "Consent to SMS communications" });
+  const confirm = page.getByRole("button", { name: "Confirm booking" });
+  await consent.check();
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await confirm.click();
+    await expect.poll(() => keys.length).toBe(attempt);
+    await expect(confirm).toBeEnabled();
+  }
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByRole("button", { name: "Review booking" }).click();
+  await consent.check();
+  await confirm.click();
+  await expect.poll(() => keys.length).toBe(4);
+  const [rejected, failed, retried, edited] = keys;
+  // A rejected request needs changes; a failed one may be saved, so its retry repeats the key.
+  expect(failed).not.toBe(rejected);
+  expect(retried).toBe(failed);
+  expect(edited).not.toBe(retried);
+  expect(new Set(keys).size).toBe(3);
 });
 
 test("availability errors fail closed and can be retried", async ({ page }) => {

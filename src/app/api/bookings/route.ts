@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { availableSlots, bookingPayload, bookingRequestSchema, wallClock } from "@/lib/booking";
+import {
+  availableSlots,
+  BookingRequestConflict,
+  bookingPayload,
+  bookingRequestSchema,
+  wallClock,
+} from "@/lib/booking";
 import { checkRequestImageStorage, createImageUploadToken } from "@/lib/server/request-images";
 import {
   createBooking,
@@ -57,7 +63,12 @@ export async function POST(request: NextRequest) {
       }
     }
     const booking = bookingPayload(input, service);
-    const id = await createBooking(booking);
+    const id = await createBooking(
+      booking,
+      { firstName: input.firstName, lastName: input.lastName, smsConsent: input.smsConsent },
+      // Clients from before request keys existed still get a single, unretried save.
+      input.requestKey ?? crypto.randomUUID(),
+    );
     return NextResponse.json(
       {
         id,
@@ -70,7 +81,9 @@ export async function POST(request: NextRequest) {
       },
       { status: 201, headers: { "Cache-Control": "no-store" } },
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof BookingRequestConflict)
+      return NextResponse.json({ error: error.message }, { status: 409 });
     return NextResponse.json(
       { error: "Your request couldn’t be sent. Please try again." },
       { status: 503 },

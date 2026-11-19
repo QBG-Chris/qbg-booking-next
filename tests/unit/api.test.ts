@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { demoAvailability, demoProfile, demoServices } from "@/lib/demo";
+import { BookingRequestConflict } from "@/lib/booking";
 
 vi.mock("@/lib/server/repository", () => ({
   getProfile: vi.fn(),
@@ -17,6 +18,8 @@ import * as imageStorage from "@/lib/server/request-images";
 import * as repository from "@/lib/server/repository";
 import { POST } from "@/app/api/bookings/route";
 import { GET } from "@/app/api/stylists/[slug]/availability/route";
+
+const requestKey = "8b3f9a3e-2f4c-4d7a-9c1e-5a6b7c8d9e0f";
 
 const input = {
   slug: "jane-doe",
@@ -88,6 +91,8 @@ describe("booking endpoint", () => {
         status: "requested",
         appointment_end_time: "11:30",
       }),
+      expect.anything(),
+      expect.any(String),
     );
     expect(await response.json()).toMatchObject({ id: "b123", stylist: { slug: "jane-doe" } });
   });
@@ -131,6 +136,67 @@ describe("booking endpoint", () => {
     vi.mocked(repository.createBooking).mockRejectedValueOnce(new Error("failed"));
     expect((await POST(request(input))).status).toBe(503);
     expect((await POST(request(input))).status).toBe(201);
+  });
+  it("saves the requester's identity details with the appointment and their own opt-in", async () => {
+    const response = await POST(
+      request({ ...input, phone: "+1 (555) 123-4567", firstName: " Alex ", requestKey }),
+    );
+    expect(response.status).toBe(201);
+    expect(repository.createBooking).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        stylist_slug: "jane-doe",
+        client_name: "Alex Smith",
+        client_phone: "+15551234567",
+        client_email: "alex@example.com",
+        status: "requested",
+        is_online_booking: true,
+      }),
+      { firstName: "Alex", lastName: "Smith", smsConsent: true },
+      requestKey,
+    );
+    // The receipt shows the same phone saved on the appointment and the identity.
+    expect((await response.json()).booking.client_phone).toBe("+15551234567");
+  });
+  it("sends a retried request's key unchanged so the database returns the saved booking", async () => {
+    await POST(request({ ...input, requestKey }));
+    await POST(request({ ...input, requestKey }));
+    expect(vi.mocked(repository.createBooking).mock.calls.map((call) => call[2])).toEqual([
+      requestKey,
+      requestKey,
+    ]);
+  });
+  it("uses a one-time key for clients that don't send one", async () => {
+    await POST(request(input));
+    await POST(request(input));
+    const [first, second] = vi.mocked(repository.createBooking).mock.calls.map((call) => call[2]);
+    expect(first).toMatch(/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/);
+    expect(second).not.toBe(first);
+  });
+  it("rejects malformed request keys without writing", async () => {
+    expect((await POST(request({ ...input, requestKey: "1; drop table" }))).status).toBe(400);
+    expect(repository.createBooking).not.toHaveBeenCalled();
+  });
+  it("asks for a review when a request key was used for different details", async () => {
+    vi.mocked(repository.createBooking).mockRejectedValue(new BookingRequestConflict());
+    const response = await POST(request({ ...input, requestKey }));
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toMatch(/review/);
+    expect(imageStorage.createImageUploadToken).not.toHaveBeenCalled();
+  });
+  it("never accepts identity, ownership, or consent fields from the visitor", async () => {
+    await POST(
+      request({
+        ...input,
+        identity_id: "someone-elses-identity",
+        user_id: "another-stylist",
+        is_client: true,
+        consent_status: true,
+      }),
+    );
+    const [payload, requester] = vi.mocked(repository.createBooking).mock.calls[0];
+    expect(payload).not.toHaveProperty("identity_id");
+    expect(payload).not.toHaveProperty("user_id");
+    expect(requester).toEqual({ firstName: "Alex", lastName: "Smith", smsConsent: true });
   });
 });
 

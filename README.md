@@ -13,7 +13,7 @@ npm ci
 cp .env.example .env.local
 ```
 
-The existing `.env.local` configuration was copied with this project. For a fresh checkout, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env.local` using your Supabase project’s API settings. Use the anonymous/publishable client key for the `NEXT_PUBLIC_` setting. Existing Supabase row-level security policies continue to apply to bookings. Optional photo uploads also need the server-only key described below.
+The existing `.env.local` configuration was copied with this project. For a fresh checkout, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in `.env.local` using your Supabase project’s API settings. Use the anonymous/publishable client key for the `NEXT_PUBLIC_` setting. Booking requests, schedule blocks, and photo uploads also need the server-only `SUPABASE_SECRET_KEY` described below, and booking requests need the [identity migration](#booking-requests-and-identities).
 
 ```sh
 npm run dev
@@ -31,19 +31,19 @@ Enter **jane-doe**, or open [/jane-doe](http://localhost:3000/jane-doe). The dem
 
 ## Features and routes
 
-| Route                                                  | Behavior                                                                                                                 |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `/`                                                    | Manual stylist lookup. `/?slug=jane-doe` redirects to the profile.                                                       |
-| `/:slug`                                               | Stylist profile, bio, avatar, phone, email, and location.                                                                |
-| `/book/:slug`                                          | Service → date and time → client details → review.                                                                       |
-| `/book/:slug/confirmation`                             | Request receipt, including a short booking reference.                                                                    |
-| `GET /api/stylists/:slug/availability?date=YYYY-MM-DD` | Busy start/end times only; no client contact details.                                                                    |
-| `POST /api/bookings`                                   | Validates details and consent, resolves the stylist's active service, rechecks availability, and inserts an appointment. |
-| `POST /api/bookings/:id/images`                        | Attaches one validated photo using the appointment-scoped upload token issued with a new booking.                        |
+| Route                                                  | Behavior                                                                                                                                          |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`                                                    | Manual stylist lookup. `/?slug=jane-doe` redirects to the profile.                                                                                |
+| `/:slug`                                               | Stylist profile, bio, avatar, phone, email, and location.                                                                                         |
+| `/book/:slug`                                          | Service → date and time → client details → review.                                                                                                |
+| `/book/:slug/confirmation`                             | Request receipt, including a short booking reference.                                                                                             |
+| `GET /api/stylists/:slug/availability?date=YYYY-MM-DD` | Busy start/end times only; no client contact details.                                                                                             |
+| `POST /api/bookings`                                   | Validates details and consent, resolves the stylist's active service, rechecks availability, and saves the request with the requester's identity. |
+| `POST /api/bookings/:id/images`                        | Attaches one validated photo using the appointment-scoped upload token issued with a new booking.                                                 |
 
 The interface uses official shadcn/ui components (Base UI) and Tailwind CSS 4. Each stylist's `BookingProfiles.theme` (`light` or `dark`) controls the profile, booking flow, and confirmation page. Light mode uses a soft gray background with lighter cards; dark mode uses a near-black background with slightly lighter cards. `BookingProfiles.accent_color` accepts a three- or six-digit hex color (including `#`) and colors buttons, icons, selections, and focus rings. Button labels automatically use black or white for contrast. Missing or invalid themes fall back to dark mode; missing or invalid accents use a default BlendIQ accent suited to the selected theme. Profile settings are rendered on the server and take precedence over browser preferences or previously saved themes. The appointment overview and sticky action bar adapt for smaller screens. Keyboard-accessible native radio inputs select services and times.
 
-Details remain intact when moving between steps. Required fields are first name, last name, email, and a 10-digit US phone number. Phone numbers format as you type, with an optional `+1` country code; submissions still use national digits. Notes are optional; explicit SMS consent is required before sending. Failed availability checks block progression and offer retry. Failed submissions retain the request for retry. Confirmation data is stored in this tab's `sessionStorage` so refresh works; opening a confirmation in another browser/tab offers a path to start booking.
+Details remain intact when moving between steps. Required fields are first name, last name, email, and a 10-digit US phone number. Phone numbers format as you type, with an optional `+1` country code, and are saved in international format (`+15551234567`). Notes are optional; explicit SMS consent is required before sending. Failed availability checks block progression and offer retry. Failed submissions retain the request for retry, and a retry of an unchanged request reuses its request key so it never saves a second booking. Confirmation data is stored in this tab's `sessionStorage` so refresh works; opening a confirmation in another browser/tab offers a path to start booking.
 
 ## Optional appointment photos
 
@@ -54,7 +54,7 @@ Selfies offer **Choose file** and **Take photo**. The camera option requests the
 Before enabling live uploads:
 
 1. Run `supabase/migrations/202610190001_request_images.sql` in your Supabase SQL editor (or apply it through your migration workflow). It creates/configures the **private** `RequestImages` bucket and its MIME/size restrictions. If the bucket already exists, it makes it private; review any existing consumers that rely on public URLs first.
-2. Set `SUPABASE_SECRET_KEY` in `.env.local` and the deployed server environment. A legacy `SUPABASE_SERVICE_ROLE_KEY` is also supported. Never prefix this key with `NEXT_PUBLIC_`. The privileged client is confined to the server-only photo module; appointment queries continue using the existing public key.
+2. Set `SUPABASE_SECRET_KEY` in `.env.local` and the deployed server environment. A legacy `SUPABASE_SERVICE_ROLE_KEY` is also supported. Never prefix this key with `NEXT_PUBLIC_`. The privileged key is used only in server-only modules, for photo uploads, private settings (schedule blocks and social links), and booking requests. Public reads (profiles, services, availability, and busy times) continue using the public key.
 3. Keep `RequestImages` free of public/anonymous read or write policies, including broad existing policies on `storage.objects`. A private bucket still permits access through matching RLS policies. For stylist access, use an authenticated policy scoped to appointment ownership, or authorize the stylist on a server and generate a short-lived signed download URL. This booking app does not expose a public photo-reading endpoint.
 
 To troubleshoot **“Photo uploads are unavailable right now”**, run:
@@ -83,13 +83,28 @@ Social profiles appear on the stylist page and in the booking overview. Links ar
 
 Schedule blocks are scoped by `ScheduleBlocks.user_id = BookingProfiles.user_id`. A non-null `date` makes a block apply only on that date. Otherwise, `is_daily` applies every day, and `is_weekly` applies to the comma-separated `days_of_week` values (Monday=0 through Sunday=6). Matching blocks are returned as busy time ranges without exposing user IDs or recurrence records. Both the date picker and the server's pre-insert check exclude any appointment that overlaps a block, including services that start before a block and run into it. A service can end exactly when a block starts or begin exactly when it ends. A block that ends at or before its start time (for example `18:00`–`00:00`) runs through midnight. Blocks are private settings, so they are read with the server-only `SUPABASE_SECRET_KEY` (or `SUPABASE_SERVICE_ROLE_KEY`); the anonymous key is hidden from them by row-level security and would return no blocks. A failed block lookup prevents booking until availability can be checked again. Demo mode includes a daily noon–1 PM block.
 
-The insert keeps the original column contract: `stylist_slug`, `services`, `client_name`, `client_email`, `client_phone`, `appointment_date`, `appointment_start_time`, `appointment_end_time`, `notes`, `status`, `price`, and `is_online_booking`. Requests use `requested` status, national phone digits, local `YYYY-MM-DD` dates, and 24-hour times. Service price, duration, and name are resolved on the server.
+The `Appointments` primary key is `appointment_id`. The repository returns it as `id` in the booking receipt and uses that same value for photo paths and upload permission. Save failures log their database code and HTTP status in the Next.js terminal without client details.
 
-The `Appointments` primary key is `appointment_id`. The repository returns it as `id` in the booking receipt and uses that same value for photo paths and upload permission. Insert failures log their database code and HTTP status in the Next.js terminal without client details.
+### Booking requests and identities
+
+Each request is saved with a Blend IQ identity, so the main app can approve or deny it and send the matching text. Apply `supabase/migrations/20261118120000_online_booking_identities.sql` to the Blend IQ database first, after the app's `20261117120000_client_identities.sql`. The file belongs with the app's migrations (`blend_iq/supabase/migrations/`); copy it there and use that project's migration workflow. It adds the `request_online_booking` function and a private `booking_private` schema, and changes no existing table.
+
+`POST /api/bookings` calls `request_online_booking` with the server-only key. Anonymous visitors cannot write identities (their row-level security allows only the signed-in stylist), and the function can be executed only by the service role. In one transaction it:
+
+1. Looks up the stylist's `user_id` from `BookingProfiles` by slug.
+2. Reuses one of that stylist's `Identities` when exactly one clearly is the requester: the same name and phone (or the same email when that identity has no phone on file), or a compatible name (`Alex`/`Alexander`) with the same phone _and_ email. Names alone, ties, and people who share a phone or email under a different name get a new identity with `is_client: false`, and the stylist can merge duplicates in the app. It never links another stylist's identity.
+3. Makes sure the identity has one `IdentityContacts`, `IdentityPreferences`, and `IdentitySMSConsent` row. New identities get the phone and email, preferences `send_creation`/`send_cancellation`/`send_reminder` set to `false` with `reminder_lead` 0, and `consent_status` from the requester's opt-in (`updated_at` is set when consent is given). Reused identities keep their names, `is_client`, preferences, and contact details; only a missing phone or email is filled in. A recorded opt-out stays until the requester opts in again, and not opting in on a request never revokes consent. Consent is never recorded without a phone number.
+4. Inserts the appointment with `identity_id`, the stylist's `user_id`, `stylist_slug`, `is_online_booking: true`, `status: "requested"`, `client_name`, `client_phone` (the same `+1…` number as the contact), `client_email`, `services`, `appointment_date`, `appointment_start_time`, `appointment_end_time`, `notes`, and `price`. Service price, duration, and name are resolved on the server; dates are local `YYYY-MM-DD` and times are 24-hour.
+
+The browser sends a random request key with each request and repeats it only when retrying after a server error or lost response. The function stores keys in `booking_private.request_keys`, outside the API, and returns the saved appointment for a repeated key; a key reused for different details is refused (HTTP 409). Matching for the same phone or email runs one request at a time, so simultaneous submissions can't create two identities. Any failure rolls back the whole request.
+
+The site never sends texts or writes `ReminderJobs`. The stylist's existing push notification for new requests still fires. When the stylist approves, the app reuses `Appointments.identity_id`, marks the identity as a client, and queues the approved text; when the stylist denies, it queues the denied text and leaves `is_client` alone. Both texts require `IdentitySMSConsent.consent_status` and an appointment phone matching `IdentityContacts.phone`.
+
+Database tests run the real migration in [PGlite](https://pglite.dev) against `tests/fixtures/identity-schema.sql`, a copy of the deployed identity tables and policies. Keep it in step with the app's schema.
 
 Availability now excludes any overlap with an existing appointment and requires the entire service to fit within a working window. Times retain the original browser-local interpretation; the request includes the browser's IANA time zone so same-day server validation uses the same clock. The source schema has no stylist time-zone field. Supporting clients and stylists in different time zones would require that schema/product decision.
 
-The server rechecks availability before insertion. Preventing simultaneous requests from claiming the same time requires a database constraint or transactional RPC; this migration does not change the existing database schema. It also preserves the existing SMS consent UI and appointment insert, without introducing a separate SMS delivery service or consent column.
+The server rechecks availability before saving. Two different requesters submitting the same time at the same moment can still both be saved as requests; the stylist approves one. Preventing that would need an overlap check in `request_online_booking` or a database constraint.
 
 ## Structure
 
@@ -99,7 +114,8 @@ The server rechecks availability before insertion. Preventing simultaneous reque
 - `src/lib/models.ts`: Shared data types and runtime schemas.
 - `src/lib/booking.ts`: Validation, date/time handling, availability, and insert mapping.
 - `src/lib/server/repository.ts`: Server-only Supabase access and isolated demo adapter.
-- `tests/unit/`: Domain and API regression checks using mocked repositories.
+- `supabase/migrations/`: Database changes this site needs, to apply through the Blend IQ app's migrations.
+- `tests/unit/`: Domain and API regression checks using mocked repositories, plus database tests of the booking function in PGlite.
 - `tests/e2e/`: Chrome checks using demo data, including mobile/desktop and profile appearance overriding either browser theme preference.
 
 Add UI components with the standard [shadcn CLI](https://ui.shadcn.com/docs/installation/next):
@@ -124,6 +140,6 @@ Browser tests use installed Google Chrome, start their own demo server on port *
 
 ## Deploy
 
-Deploy this directory as a separate Next.js application, using `npm ci`, `npm run build`, and `npm start`. Configure the Supabase environment variables and set `NEXT_PUBLIC_DEMO_MODE=false` **before building**. This app needs a Next.js server/runtime for its API routes; it is not a static Flutter/web export. The sibling Flutter project’s deployment configuration is separate. For Netlify, configure a new site with this project root as its base directory and the Next.js runtime.
+Deploy this directory as a separate Next.js application, using `npm ci`, `npm run build`, and `npm start`. Configure the Supabase environment variables, including the server-only `SUPABASE_SECRET_KEY`, and set `NEXT_PUBLIC_DEMO_MODE=false` **before building**. Apply the [booking identity migration](#booking-requests-and-identities) before deploying a version that uses it; until then, booking requests fail and nothing is saved. This app needs a Next.js server/runtime for its API routes; it is not a static Flutter/web export. The sibling Flutter project’s deployment configuration is separate. For Netlify, configure a new site with this project root as its base directory and the Next.js runtime.
 
 No production database writes or deployment are required to validate the migration locally.

@@ -4,13 +4,7 @@ import { demoServices } from "@/lib/demo";
 import type { ScheduleBlock } from "@/lib/models";
 
 vi.mock("server-only", () => ({}));
-const { from, insert, select, single, createClient } = vi.hoisted(() => ({
-  from: vi.fn(),
-  insert: vi.fn(),
-  select: vi.fn(),
-  single: vi.fn(),
-  createClient: vi.fn(),
-}));
+const { createClient } = vi.hoisted(() => ({ createClient: vi.fn() }));
 vi.mock("@supabase/supabase-js", () => ({ createClient }));
 
 const payload = bookingPayload(
@@ -26,6 +20,8 @@ const payload = bookingPayload(
   },
   demoServices[0],
 );
+const requester = { firstName: "Alex", lastName: "Smith", smsConsent: true };
+const requestKey = "8b3f9a3e-2f4c-4d7a-9c1e-5a6b7c8d9e0f";
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -35,10 +31,6 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-anonymous-key");
   vi.stubEnv("SUPABASE_SECRET_KEY", "test-server-secret");
   vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "");
-  createClient.mockReturnValue({ from });
-  from.mockReturnValue({ insert });
-  insert.mockReturnValue({ select });
-  select.mockReturnValue({ single });
 });
 
 afterEach(() => {
@@ -46,44 +38,115 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("live booking repository", () => {
-  it("returns the existing appointment_id as the receipt id without changing the insert payload", async () => {
-    // Reproduce the live schema: Appointments has appointment_id, not id.
-    select.mockImplementation((columns) => {
-      single.mockResolvedValue(
-        columns === "id:appointment_id"
-          ? { data: { id: 123 }, error: null, status: 201 }
-          : { data: null, error: { code: "42703" }, status: 400 },
-      );
-      return { single };
+/** Exercises the actual Supabase client against a fake PostgREST response. */
+async function mockDatabase(response: () => Response) {
+  const requests: { url: URL; apikey: string | null; body: unknown }[] = [];
+  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push({
+      url: new URL(input instanceof Request ? input.url : String(input)),
+      apikey: new Headers(init?.headers).get("apikey"),
+      body: init?.body ? JSON.parse(String(init.body)) : undefined,
     });
+    return response();
+  });
+  const actual =
+    await vi.importActual<typeof import("@supabase/supabase-js")>("@supabase/supabase-js");
+  createClient.mockImplementation((url, key, options) =>
+    actual.createClient(url, key, { ...options, global: { fetch } }),
+  );
+  return { requests, fetch };
+}
+
+describe("live booking repository", () => {
+  it("saves the identity and appointment through the server-only booking RPC", async () => {
+    const { requests } = await mockDatabase(() => Response.json(123));
     const { createBooking } = await import("@/lib/server/repository");
-    await expect(createBooking(payload)).resolves.toBe("123");
-    expect(from).toHaveBeenCalledWith("Appointments");
-    expect(insert).toHaveBeenCalledExactlyOnceWith(payload);
+    // The existing database uses appointment_id; receipts expose it as id.
+    await expect(createBooking(payload, requester, requestKey)).resolves.toBe("123");
+    expect(requests).toHaveLength(1);
+    const [call] = requests;
+    expect(call.url.pathname).toBe("/rest/v1/rpc/request_online_booking");
+    // Identity writes need the privileged key; the public key never reaches them.
+    expect(call.apikey).toBe("test-server-secret");
+    expect(call.body).toEqual({
+      p_request_key: requestKey,
+      p_request: {
+        stylist_slug: "jane-doe",
+        first_name: "Alex",
+        last_name: "Smith",
+        phone: "+15551234567",
+        email: "alex@example.com",
+        sms_consent: true,
+        services: "Signature haircut",
+        appointment_date: "2099-10-20",
+        appointment_start_time: "10:30",
+        appointment_end_time: "11:30",
+        notes: null,
+        price: 85,
+      },
+    });
+  });
+
+  it.each([
+    { SUPABASE_SECRET_KEY: "", SUPABASE_SERVICE_ROLE_KEY: "" },
+    { SUPABASE_SECRET_KEY: "test-anonymous-key" },
+  ])("fails closed before any request without a distinct server key: %j", async (env) => {
+    for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { fetch } = await mockDatabase(() => Response.json(123));
+    const { createBooking } = await import("@/lib/server/repository");
+    await expect(createBooking(payload, requester, requestKey)).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("logs database failure codes without leaking client data or database details", async () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    single.mockResolvedValue({
-      data: null,
-      error: {
-        code: "23502",
-        message: "private database message",
-        details: `Failing row contains ${payload.client_email}`,
-      },
-      status: 400,
-    });
+    await mockDatabase(() =>
+      Response.json(
+        {
+          code: "23502",
+          message: "private database message",
+          details: `Failing row contains ${payload.client_email}`,
+        },
+        { status: 400 },
+      ),
+    );
     const { createBooking } = await import("@/lib/server/repository");
-    await expect(createBooking(payload)).rejects.toThrow(
+    await expect(createBooking(payload, requester, requestKey)).rejects.toThrow(
       "Your request couldn’t be sent. Please try again.",
     );
-    expect(log).toHaveBeenCalledWith("[booking] Appointment insert failed.", {
+    expect(log).toHaveBeenCalledWith("[booking] Booking request failed.", {
       code: "23502",
       status: 400,
     });
     expect(JSON.stringify(log.mock.calls)).not.toContain(payload.client_email);
     expect(JSON.stringify(log.mock.calls)).not.toContain("private database message");
+  });
+
+  it("reports a request key reused for different details as a conflict", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await mockDatabase(() =>
+      Response.json({ code: "PT409", message: "already used" }, { status: 409 }),
+    );
+    const { createBooking } = await import("@/lib/server/repository");
+    // The same module instance the freshly imported repository uses.
+    const { BookingRequestConflict } = await import("@/lib/booking");
+    await expect(createBooking(payload, requester, requestKey)).rejects.toBeInstanceOf(
+      BookingRequestConflict,
+    );
+  });
+
+  it("rejects a missing appointment id instead of issuing a receipt", async () => {
+    await mockDatabase(() => Response.json(null));
+    const { createBooking } = await import("@/lib/server/repository");
+    await expect(createBooking(payload, requester, requestKey)).rejects.toThrow();
+  });
+
+  it("never touches the database in demo mode", async () => {
+    vi.stubEnv("NEXT_PUBLIC_DEMO_MODE", "true");
+    const { createBooking } = await import("@/lib/server/repository");
+    await expect(createBooking(payload, requester, requestKey)).resolves.toBe(`demo-${requestKey}`);
+    expect(createClient).not.toHaveBeenCalled();
   });
 });
 
