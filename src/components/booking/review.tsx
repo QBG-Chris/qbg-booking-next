@@ -102,15 +102,19 @@ export function Review({
           checked={consent}
           onCheckedChange={(checked) => onConsent(checked === true)}
           disabled={submitting || bookingSent}
+          aria-describedby="sms-consent-terms"
           className="mt-1 size-5"
         />
         <div>
           <Label htmlFor="sms-consent" className="cursor-pointer text-sm leading-6">
-            Keep me updated about my appointment
+            Consent to SMS communications
           </Label>
-          <p className="mt-2 text-xs leading-6 text-muted-foreground">
-            By confirming this booking, you agree to receive SMS notifications regarding your
-            appointment. Message and data rates may apply.
+          {/* Carrier (A2P 10DLC) review expects sender, purpose, frequency, rates, and opt-out. */}
+          <p id="sms-consent-terms" className="mt-2 text-xs leading-6 text-muted-foreground">
+            By checking this box, you agree to receive text messages about this appointment from{" "}
+            {profile.display_name} through BlendIQ at the phone number you provided. Message
+            frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for
+            help. Check the box to continue.
           </p>
         </div>
       </div>

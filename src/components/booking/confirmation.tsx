@@ -10,8 +10,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { StylistIdentity } from "@/components/stylist-identity";
+import { StylistLocation } from "@/components/stylist-location";
 import { Detail } from "./appointment-overview";
-import { displayDate, displayTime, duration, money } from "@/lib/booking";
+import { address, displayDate, displayTime, duration, money } from "@/lib/booking";
 import { loadReceipt } from "@/lib/receipt";
 import type { Profile, Receipt } from "@/lib/models";
 import { requestImageLabels } from "@/lib/request-images";
@@ -83,6 +84,12 @@ export function Confirmation({ profile }: { profile: Profile }) {
               />
             )}
           </div>
+          {address(stylist) && (
+            <>
+              <Separator className="my-6" />
+              <StylistLocation profile={stylist} />
+            </>
+          )}
           <Separator className="my-6" />
           <div className="flex flex-wrap justify-between gap-3 text-xs">
             <span className="text-muted-foreground">Booking reference</span>

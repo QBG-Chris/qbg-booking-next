@@ -84,6 +84,8 @@ export function BookingFlow({
   const [submissionError, setSubmissionError] = useState("");
   const [images, setImages] = useState<RequestImageFiles>({});
   const [pendingPhotos, setPendingPhotos] = useState<PendingPhotos>();
+  // Identifies one request across retries, so a retry can't save a second booking.
+  const requestKeyRef = useRef<string | undefined>(undefined);
   const headingRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -118,6 +120,8 @@ export function BookingFlow({
 
   function goTo(next: number) {
     if (submittingRef.current || pendingPhotos) return;
+    // Leaving review lets the details change, so the next send is a new request.
+    requestKeyRef.current = undefined;
     setStep(next);
     setConsent(false);
     setSubmissionError("");
@@ -150,6 +154,8 @@ export function BookingFlow({
     try {
       let pending = pendingPhotos;
       if (!pending) {
+        // randomUUID needs a secure context; without it the server uses a one-time key.
+        requestKeyRef.current ??= globalThis.crypto?.randomUUID?.();
         const response = await fetch("/api/bookings", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -160,6 +166,7 @@ export function BookingFlow({
             date,
             time,
             smsConsent: consent,
+            requestKey: requestKeyRef.current,
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             imageUploads: requestImageKinds
               .filter((kind) => images[kind])
@@ -170,7 +177,12 @@ export function BookingFlow({
           }),
         });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.error || "Please try again.");
+        if (!response.ok) {
+          // A rejected request was not saved, so it needs changes and a new key. Server
+          // errors and lost responses keep the key: that request may already be saved.
+          if (response.status < 500) requestKeyRef.current = undefined;
+          throw new Error(data.error || "Please try again.");
+        }
         const { imageUploadToken, ...receipt } = data as Receipt & { imageUploadToken?: string };
         saveReceipt(receipt);
         if (!requestImageKinds.some((kind) => images[kind])) {

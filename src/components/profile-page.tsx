@@ -1,13 +1,13 @@
 import Link from "next/link";
-import { ArrowRight, Mail, MapPin, Phone } from "lucide-react";
+import { ArrowRight, Mail, Phone } from "lucide-react";
 import { Shell } from "./shell";
 import { StylistAvatar } from "./stylist-identity";
+import { StylistLocation } from "./stylist-location";
 import { StylistSocialLinks } from "./stylist-social-links";
 import { Badge } from "./ui/badge";
 import { buttonVariants } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Separator } from "./ui/separator";
-import { address } from "@/lib/booking";
 import type { Profile, SocialLink } from "@/lib/models";
 
 export function ProfilePage({
@@ -80,15 +80,7 @@ export function ProfilePage({
                   </div>
                 </div>
               )}
-              {address(profile) && (
-                <div className="flex gap-3">
-                  <MapPin className="mt-1 size-4 shrink-0 text-primary" />
-                  <div>
-                    <p className="mb-1 text-xs text-muted-foreground">Location</p>
-                    <p className="leading-6">{address(profile)}</p>
-                  </div>
-                </div>
-              )}
+              <StylistLocation profile={profile} />
             </div>
           </CardContent>
         </Card>

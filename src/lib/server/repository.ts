@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import {
@@ -10,7 +11,7 @@ import {
   type BookingPayload,
   type SocialLink,
 } from "../models";
-import { scheduleBlockPeriods } from "../booking";
+import { BookingRequestConflict, scheduleBlockPeriods } from "../booking";
 import {
   demoAvailability,
   demoProfile,
@@ -31,7 +32,34 @@ function database() {
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-export async function getProfile(slug: string) {
+/**
+ * Private settings and booking requests stay behind the server; anonymous RLS reads can
+ * silently return [], and anonymous visitors can't write a stylist's identities.
+ */
+function privilegedDatabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key || key === process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    console.error(
+      "[booking] Bookings and private settings require SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY. Configure a server-only key and restart Next.js.",
+    );
+    throw new Error("We couldn’t load the stylist’s settings. Please try again.");
+  }
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+async function publicProfileOwner(slug: string, client = database()) {
+  const { data, error } = await client
+    .from("BookingProfiles")
+    .select("user_id")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (error) throw new Error("We couldn’t load this stylist. Please try again.");
+  return data ? z.object({ user_id: z.string().min(1) }).parse(data).user_id : null;
+}
+
+// Memoized per server render so metadata and the page share one profile read.
+export const getProfile = cache(async (slug: string) => {
   if (isDemo) return slug === demoProfile.slug ? demoProfile : null;
   const client = database();
   const { data, error } = await client
@@ -51,7 +79,7 @@ export async function getProfile(slug: string) {
       .getPublicUrl(profile.avatar_url).data.publicUrl;
   }
   return profile;
-}
+});
 export async function getServices(slug: string) {
   if (isDemo) return slug === demoProfile.slug ? demoServices : [];
   const { data, error } = await database()
@@ -75,25 +103,41 @@ const socialLinkRowSchema = z.object({
   platform: z.object({ name: z.string().trim().min(1) }),
 });
 
-export async function getSocialLinks(slug: string): Promise<SocialLink[]> {
+export const getSocialLinks = cache(async (slug: string): Promise<SocialLink[]> => {
   if (isDemo) return slug === demoProfile.slug ? demoSocialLinks : [];
-  const { data, error, status } = await database()
-    .from("SocialLinks")
-    .select("social_id,link,platform:SocialPlatforms!platform_id(name)")
-    .eq("stylist_slug", slug)
-    .order("social_id");
-  if (error) {
-    console.error("[booking] Social links lookup failed.", { code: error.code, status });
+  try {
+    // Establish public access before using privileged reads of the stylist's settings.
+    const userId = await publicProfileOwner(slug);
+    if (!userId) return [];
+    const { data, error, status } = await privilegedDatabase()
+      .from("SocialLinks")
+      .select("social_id,link,platform:SocialPlatforms!platform_id(name)")
+      .eq("stylist_slug", slug)
+      .eq("user_id", userId)
+      .order("social_id");
+    if (error) {
+      console.error("[booking] Social links lookup failed.", { code: error.code, status });
+      return [];
+    }
+    // Return only safe public destinations, never the underlying private records.
+    return (data ?? []).flatMap((row) => {
+      const parsed = socialLinkRowSchema.safeParse(row);
+      return parsed.success
+        ? [
+            {
+              id: parsed.data.social_id,
+              platform: parsed.data.platform.name,
+              url: parsed.data.link,
+            },
+          ]
+        : [];
+    });
+  } catch {
+    // Social profiles are optional and must not prevent clients from booking.
+    console.error("[booking] Social links lookup failed. Check the server configuration.");
     return [];
   }
-  // Incomplete profiles or unsafe URLs should not prevent clients from booking.
-  return (data ?? []).flatMap((row) => {
-    const parsed = socialLinkRowSchema.safeParse(row);
-    return parsed.success
-      ? [{ id: parsed.data.social_id, platform: parsed.data.platform.name, url: parsed.data.link }]
-      : [];
-  });
-}
+});
 
 export async function getAvailability(slug: string) {
   if (isDemo) return slug === demoProfile.slug ? demoAvailability : [];
@@ -120,15 +164,14 @@ export async function getBusyPeriods(slug: string, date: string) {
       .eq("appointment_date", date)
       .neq("status", "cancelled"),
     // ScheduleBlocks belongs to the stylist's user, not the booking profile's id.
-    client.from("BookingProfiles").select("user_id").eq("slug", slug).single(),
+    publicProfileOwner(slug, client),
   ]);
-  if (appointments.error || owner.error)
+  if (appointments.error || !owner)
     throw new Error("We couldn’t check availability. Please try again.");
-  const { user_id } = z.object({ user_id: z.string().min(1) }).parse(owner.data);
-  const { data, error } = await client
+  const { data, error } = await privilegedDatabase()
     .from("ScheduleBlocks")
     .select("date,start_time,end_time,is_daily,is_weekly,days_of_week")
-    .eq("user_id", user_id)
+    .eq("user_id", owner)
     .or(`date.eq.${date},and(date.is.null,or(is_daily.eq.true,is_weekly.eq.true))`);
   if (error) throw new Error("We couldn’t check availability. Please try again.");
   return [
@@ -136,18 +179,50 @@ export async function getBusyPeriods(slug: string, date: string) {
     ...scheduleBlockPeriods(date, z.array(scheduleBlockSchema).parse(data)),
   ];
 }
-export async function createBooking(payload: BookingPayload): Promise<string> {
-  if (isDemo) return `demo-${crypto.randomUUID()}`;
-  const { data, error, status } = await database()
-    .from("Appointments")
-    .insert(payload)
-    // The existing database uses appointment_id; receipts expose it as id.
-    .select("id:appointment_id")
-    .single();
+export type BookingRequester = {
+  firstName: string;
+  lastName: string;
+  /** The requester's own opt-in to texts; entering a phone number is not consent. */
+  smsConsent: boolean;
+};
+
+/**
+ * Saves the requester's identity (reused or new, with its contact, preference and SMS
+ * consent rows) and the linked appointment in one transaction. Retrying with the same
+ * request key returns the appointment already saved. Nothing here sends texts.
+ */
+export async function createBooking(
+  payload: BookingPayload,
+  requester: BookingRequester,
+  requestKey: string,
+): Promise<string> {
+  if (isDemo) return `demo-${requestKey}`;
+  const { data, error, status } = await privilegedDatabase().rpc("request_online_booking", {
+    p_request_key: requestKey,
+    p_request: {
+      stylist_slug: payload.stylist_slug,
+      first_name: requester.firstName,
+      last_name: requester.lastName,
+      phone: payload.client_phone || null,
+      email: payload.client_email || null,
+      sms_consent: requester.smsConsent,
+      services: payload.services,
+      appointment_date: payload.appointment_date,
+      appointment_start_time: payload.appointment_start_time,
+      appointment_end_time: payload.appointment_end_time,
+      notes: payload.notes,
+      price: payload.price,
+    },
+  });
   if (error) {
     // Database details can contain client data, so log only the failure code and status.
-    console.error("[booking] Appointment insert failed.", { code: error.code, status });
+    console.error("[booking] Booking request failed.", { code: error.code, status });
+    if (error.code === "PT409") throw new BookingRequestConflict();
     throw new Error("Your request couldn’t be sent. Please try again.");
   }
-  return z.coerce.string().parse(data.id);
+  // The existing database uses appointment_id; receipts expose it as id.
+  return z
+    .union([z.number().int().positive(), z.string().regex(/^\d+$/)])
+    .transform(String)
+    .parse(data);
 }

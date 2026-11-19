@@ -4,6 +4,7 @@ import {
   bookingPayload,
   bookingRequestSchema,
   detailsSchema,
+  internationalPhone,
   isCalendarDate,
   localDate,
   normalizePhone,
@@ -71,6 +72,15 @@ describe("schedule blocks", () => {
         { ...block, is_weekly: true, days_of_week: " , , " },
       ]),
     ).toEqual([]);
+  });
+  it("treats a block ending at midnight as lasting through the end of the day", () => {
+    const busy = scheduleBlockPeriods(input.date, [
+      { ...block, date: input.date, start_time: "15:00:00", end_time: "00:00:00" },
+    ]);
+    const slots = availableSlots(input.date, demoServices[2], demoAvailability, busy, now);
+    expect(slots).toContain("14:30");
+    expect(slots).not.toContain("15:00");
+    expect(slots).not.toContain("16:30");
   });
   it("removes every service overlapping a block while allowing exact boundaries", () => {
     const busy = scheduleBlockPeriods(input.date, [{ ...block, date: input.date }]);
@@ -176,13 +186,25 @@ describe("booking validation and payload", () => {
     expect(normalizePhone("+1 (555) 123-4567")).toBe("5551234567");
     expect(normalizePhone("1551234567")).toBe("1551234567");
   });
-  it("preserves the existing Appointments insert contract and computes the end time", () => {
+  it.each(["+1 (555) 123-4567", "5551234567", "15551234567", "555.123.4567"])(
+    "stores %s in the international format Blend IQ saves contacts with",
+    (phone) => {
+      expect(internationalPhone(phone)).toBe("+15551234567");
+    },
+  );
+  it("accepts an optional UUID request key for retries", () => {
+    const requestKey = "8b3f9a3e-2f4c-4d7a-9c1e-5a6b7c8d9e0f";
+    expect(bookingRequestSchema.parse({ ...input, requestKey }).requestKey).toBe(requestKey);
+    expect(bookingRequestSchema.parse(input).requestKey).toBeUndefined();
+    expect(bookingRequestSchema.safeParse({ ...input, requestKey: "retry-1" }).success).toBe(false);
+  });
+  it("keeps the appointment fields and computes the end time", () => {
     expect(bookingPayload(input, demoServices[0])).toEqual({
       stylist_slug: "jane-doe",
       services: "Signature haircut",
       client_name: "Alex Smith",
       client_email: "alex@example.com",
-      client_phone: "5551234567",
+      client_phone: "+15551234567",
       appointment_date: "2026-10-20",
       appointment_start_time: "10:30",
       appointment_end_time: "11:30",

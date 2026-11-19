@@ -25,6 +25,16 @@ export function normalizePhone(value: string): string {
   const digits = value.replace(/\D/g, "");
   return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
 }
+/** A validated US phone in the international format Blend IQ stores, such as +15551234567. */
+export function internationalPhone(value: string): string {
+  return `+1${normalizePhone(value)}`;
+}
+/** The request key was already used for a booking with different details. */
+export class BookingRequestConflict extends Error {
+  constructor() {
+    super("Your booking details changed. Please review them and send your request again.");
+  }
+}
 export function formatPhone(value: string): string {
   const digits = value.replace(/\D/g, "");
   if (!digits) return value.trimStart().startsWith("+") ? "+" : "";
@@ -59,6 +69,8 @@ export const bookingRequestSchema = detailsSchema.extend({
   date: dateSchema,
   time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
   smsConsent: z.literal(true, { error: "SMS consent is required." }),
+  // Repeated on retries so the database returns the booking it already saved.
+  requestKey: z.uuid().optional(),
   imageUploads: requestImageUploadsSchema.optional().default([]),
   timeZone: z
     .string()
@@ -170,6 +182,12 @@ export function availableSlots(
 ): string[] {
   if (!isCalendarDate(date) || date < now.date) return [];
   const weekday = (parseLocalDate(date).getDay() + 6) % 7;
+  const reserved = busy.map((item) => {
+    const start = minutes(item.appointment_start_time);
+    const end = minutes(item.appointment_end_time);
+    // A period ending at or before its start (such as 18:00–00:00) runs through midnight.
+    return { start, end: end <= start ? 24 * 60 : end };
+  });
   const slots = new Set<string>();
   for (const window of schedule.filter((item) => item.day_of_week === weekday)) {
     const close = minutes(window.end_at);
@@ -180,11 +198,7 @@ export function availableSlots(
     ) {
       if (date === now.date && start <= minutes(now.time)) continue;
       if (
-        busy.some(
-          (item) =>
-            start < minutes(item.appointment_end_time) &&
-            start + service.duration_minutes > minutes(item.appointment_start_time),
-        )
+        reserved.some((item) => start < item.end && start + service.duration_minutes > item.start)
       )
         continue;
       slots.add(timeFromMinutes(start));
@@ -202,7 +216,7 @@ export function bookingPayload(
     services: service.name,
     client_name: `${request.firstName.trim()} ${request.lastName.trim()}`,
     client_email: request.email.trim(),
-    client_phone: normalizePhone(request.phone),
+    client_phone: internationalPhone(request.phone),
     appointment_date: request.date,
     appointment_start_time: request.time,
     appointment_end_time: timeFromMinutes(minutes(request.time) + service.duration_minutes),
