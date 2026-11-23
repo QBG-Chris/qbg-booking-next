@@ -8,6 +8,7 @@ import { Badge } from "./ui/badge";
 import { buttonVariants } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { Separator } from "./ui/separator";
+import { bookingUnavailableMessage } from "@/lib/booking";
 import type { Profile, SocialLink } from "@/lib/models";
 
 export function ProfilePage({
@@ -41,19 +42,27 @@ export function ProfilePage({
         </section>
         <Card className="h-fit rounded-2xl py-0">
           <CardContent className="p-6 sm:p-7">
-            <h2 className="text-xl font-semibold tracking-tight">Let’s make it a good hair day.</h2>
-            <p className="mt-3 text-sm leading-7 text-muted-foreground">
-              Choose a service and find a time that fits your schedule.
-            </p>
-            <Link
-              href={`/book/${profile.slug}`}
-              className={`${buttonVariants()} mt-6 h-11 w-full justify-between px-4`}
-            >
-              Book an appointment
-              <ArrowRight className="size-4" />
-            </Link>
+            {profile.is_enabled ? (
+              <>
+                <h2 className="text-xl font-semibold tracking-tight">
+                  Let’s make it a good hair day.
+                </h2>
+                <p className="mt-3 text-sm leading-7 text-muted-foreground">
+                  Choose a service and find a time that fits your schedule.
+                </p>
+                <Link
+                  href={`/book/${profile.slug}`}
+                  className={`${buttonVariants()} mt-6 h-11 w-full justify-between px-4`}
+                >
+                  Book an appointment
+                  <ArrowRight className="size-4" />
+                </Link>
+              </>
+            ) : (
+              <p className="text-sm leading-7 font-medium">{bookingUnavailableMessage}</p>
+            )}
             <Separator className="my-7" />
-            <h3 className="mb-6 text-sm font-semibold">Contact & location</h3>
+            <h2 className="mb-6 text-sm font-semibold">Contact & location</h2>
             <div className="space-y-6 text-sm">
               {profile.phone && (
                 <div className="flex gap-3">

@@ -4,6 +4,7 @@ export const demoProfile: Profile = {
   id: "stylist-1",
   slug: "jane-doe",
   display_name: "Jane Doe",
+  is_enabled: true,
   theme: "light",
   accent_color: "#765447",
   bio: "Thoughtful cuts, lived-in color, and a little time just for you. I love helping you find a look that feels like yourself.",

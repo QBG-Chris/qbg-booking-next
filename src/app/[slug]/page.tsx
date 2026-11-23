@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { ProfilePage } from "@/components/profile-page";
+import { bookingUnavailableMessage } from "@/lib/booking";
 import { getProfile, getSocialLinks } from "@/lib/server/repository";
 import { slugSchema } from "@/lib/models";
 import type { Metadata } from "next";
@@ -18,7 +19,9 @@ export async function generateMetadata({
   if (!profile) return {};
   return stylistMetadata(profile, {
     title: profile.display_name,
-    fallbackDescription: `Book an appointment with ${profile.display_name}.`,
+    fallbackDescription: profile.is_enabled
+      ? `Book an appointment with ${profile.display_name}.`
+      : bookingUnavailableMessage,
   });
 }
 

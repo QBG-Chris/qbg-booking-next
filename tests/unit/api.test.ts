@@ -109,6 +109,17 @@ describe("booking endpoint", () => {
     expect((await POST(request({ ...input, serviceId: "other-tenant-service" }))).status).toBe(404);
     expect(repository.createBooking).not.toHaveBeenCalled();
   });
+  it("declines booking requests for a disabled stylist profile", async () => {
+    vi.mocked(repository.getProfile).mockResolvedValue({ ...demoProfile, is_enabled: false });
+    const response = await POST(request(input));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error:
+        "Your stylist is not currently taking online booking requests. Please contact them directly.",
+    });
+    expect(repository.getBusyPeriods).not.toHaveBeenCalled();
+    expect(repository.createBooking).not.toHaveBeenCalled();
+  });
   it("rechecks overlaps and past dates before accepting a request", async () => {
     vi.mocked(repository.getBusyPeriods).mockResolvedValue([
       { appointment_start_time: "10:00", appointment_end_time: "11:00" },

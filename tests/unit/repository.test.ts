@@ -58,6 +58,22 @@ async function mockDatabase(response: () => Response) {
 }
 
 describe("live booking repository", () => {
+  it.each([true, false, null])(
+    "loads the public profile with is_enabled set to %s",
+    async (flag) => {
+      const { requests } = await mockDatabase(() =>
+        Response.json([{ id: 1, slug: "jane-doe", display_name: "Jane Doe", is_enabled: flag }]),
+      );
+      const { getProfile } = await import("@/lib/server/repository");
+      await expect(getProfile("jane-doe")).resolves.toMatchObject({
+        display_name: "Jane Doe",
+        is_enabled: flag === true,
+      });
+      expect(requests[0].url.searchParams.get("select")?.split(",")).toContain("is_enabled");
+      expect(requests[0].url.searchParams.has("is_enabled")).toBe(false);
+    },
+  );
+
   it("saves the identity and appointment through the server-only booking RPC", async () => {
     const { requests } = await mockDatabase(() => Response.json(123));
     const { createBooking } = await import("@/lib/server/repository");

@@ -65,7 +65,7 @@ export const getProfile = cache(async (slug: string) => {
   const { data, error } = await client
     .from("BookingProfiles")
     .select(
-      "id,slug,display_name,bio,avatar_url,phone,email,location_address,location_city,location_state,location_zip,theme,accent_color",
+      "id,slug,display_name,is_enabled,bio,avatar_url,phone,email,location_address,location_city,location_state,location_zip,theme,accent_color",
     )
     .eq("slug", slug)
     .maybeSingle();

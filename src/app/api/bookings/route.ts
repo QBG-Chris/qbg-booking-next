@@ -4,6 +4,7 @@ import {
   BookingRequestConflict,
   bookingPayload,
   bookingRequestSchema,
+  bookingUnavailableMessage,
   wallClock,
 } from "@/lib/booking";
 import { checkRequestImageStorage, createImageUploadToken } from "@/lib/server/request-images";
@@ -27,14 +28,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
   const input = parsed.data;
   try {
-    const [profile, services, schedule, busy] = await Promise.all([
-      getProfile(input.slug),
+    const profile = await getProfile(input.slug);
+    if (!profile)
+      return NextResponse.json({ error: "This stylist is no longer available." }, { status: 404 });
+    if (!profile.is_enabled)
+      return NextResponse.json({ error: bookingUnavailableMessage }, { status: 409 });
+
+    const [services, schedule, busy] = await Promise.all([
       getServices(input.slug),
       getAvailability(input.slug),
       getBusyPeriods(input.slug, input.date),
     ]);
     const service = services.find((item) => item.id === input.serviceId);
-    if (!profile || !service)
+    if (!service)
       return NextResponse.json(
         { error: "This service is no longer available. Please choose another." },
         { status: 404 },
