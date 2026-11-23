@@ -10,6 +10,9 @@ import {
   type Service,
 } from "./models";
 
+export const bookingUnavailableMessage =
+  "Your stylist is not currently taking online booking requests. Please contact them directly.";
+
 export function localDate(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }

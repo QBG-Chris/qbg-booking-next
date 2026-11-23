@@ -11,6 +11,10 @@ export const profileSchema = z.object({
   id: z.coerce.string(),
   slug: slugSchema,
   display_name: z.string(),
+  is_enabled: z
+    .boolean()
+    .nullish()
+    .transform((enabled) => enabled === true),
   bio: z.string().nullish(),
   avatar_url: z.string().nullish(),
   phone: z.string().nullish(),
